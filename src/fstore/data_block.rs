@@ -1,3 +1,4 @@
+//Copyright 2021 Matthew Petricone
 use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::error::Error;
