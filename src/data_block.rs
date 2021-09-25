@@ -32,6 +32,7 @@ pub trait BlockChecksum {
 
 /// A Datablock, minus the data.
 ///
+/// It should probably be renamed DataHeader
 #[derive(PartialEq, Debug)]
 pub struct DataBlock {
     /// size of data in this block
@@ -79,6 +80,9 @@ impl BlockSerializer for DataBlock {
         &self.header
     }
 
+    /// Fill struct from binary data
+    /// 
+    /// Assumes correct size of data for the Block
     fn deserialize(&mut self, data: &Vec<u8>) -> Result<(), Box<dyn Error>> {
         self.size_data = u64::from_le_bytes(data[0..8].try_into()?);
         self.state_flag = u32::from_le_bytes(data[8..12].try_into()?);
