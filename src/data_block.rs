@@ -13,7 +13,7 @@ pub trait BlockSerializer {
     ///
     fn serialize(&mut self) -> &Vec<u8>;
 
-    fn deserialize(&mut self,data: &Vec<u8>) -> Result<(), Box<dyn Error>>;
+    fn deserialize(&mut self, data: &Vec<u8>) -> Result<(), Box<dyn Error>>;
 
     /// size in bytes of the serialized data
     fn size() -> usize;
@@ -27,7 +27,7 @@ pub trait BlockSerializer {
 
 /// Trait for checksum calculation
 pub trait BlockChecksum {
-    fn calculate(&self,data: &[u8]) -> u32;
+    fn calculate(&self, data: &[u8]) -> u32;
 }
 
 /// A Datablock, minus the data.
@@ -50,17 +50,20 @@ pub struct DataBlock {
 
 impl DataBlock {
     /// create Data block, get size (& eventually checksum from data)
-    pub fn new(data: &[u8],checksum: Option<&dyn BlockChecksum> ) -> Result<DataBlock, Box<dyn Error>> {
+    pub fn new(
+        data: &[u8],
+        checksum: Option<&dyn BlockChecksum>,
+    ) -> Result<DataBlock, Box<dyn Error>> {
         let mut cs = 0;
         if let Some(check) = checksum {
             cs = check.calculate(data);
         }
-        Ok( DataBlock {
-            size_data:  u64::try_from(data.len())?,
+        Ok(DataBlock {
+            size_data: u64::try_from(data.len())?,
             state_flag: STATE_FLAG_ALLOC,
             address_next: DEFAULT_ADDR_NEXT,
             checksum: cs,
-            header: vec!(0),
+            header: vec![0],
         })
     }
 
@@ -71,17 +74,21 @@ impl DataBlock {
 
 impl BlockSerializer for DataBlock {
     /// Return vector serialized DataBlock
-    fn serialize(&mut self) -> &Vec<u8>  {
+    fn serialize(&mut self) -> &Vec<u8> {
         self.header.clear();
-        self.header.append(&mut self.size_data.to_le_bytes().to_vec());
-        self.header.append(&mut self.state_flag.to_le_bytes().to_vec());
-        self.header.append(&mut self.address_next.to_le_bytes().to_vec());
-        self.header.append(&mut self.checksum.to_le_bytes().to_vec());
+        self.header
+            .append(&mut self.size_data.to_le_bytes().to_vec());
+        self.header
+            .append(&mut self.state_flag.to_le_bytes().to_vec());
+        self.header
+            .append(&mut self.address_next.to_le_bytes().to_vec());
+        self.header
+            .append(&mut self.checksum.to_le_bytes().to_vec());
         &self.header
     }
 
     /// Fill struct from binary data
-    /// 
+    ///
     /// Assumes correct size of data for the Block
     fn deserialize(&mut self, data: &Vec<u8>) -> Result<(), Box<dyn Error>> {
         self.size_data = u64::from_le_bytes(data[0..8].try_into()?);
@@ -93,7 +100,7 @@ impl BlockSerializer for DataBlock {
 
     #[inline]
     fn size() -> usize {
-        (size_of::<u64>()*2)+(size_of::<u32>()*2)
+        (size_of::<u64>() * 2) + (size_of::<u32>() * 2)
     }
 
     #[inline]
@@ -101,10 +108,9 @@ impl BlockSerializer for DataBlock {
         size_of::<u64>()
     }
 
-
     fn read_ahead(size: &Vec<u8>) -> Result<i64, Box<dyn Error>> {
-        let mds = i64::try_from(size_of::<u64>()+(size_of::<u32>()*2))?;
-        Ok(i64::from_le_bytes(size[0..8].try_into()?)+mds)
+        let mds = i64::try_from(size_of::<u64>() + (size_of::<u32>() * 2))?;
+        Ok(i64::from_le_bytes(size[0..8].try_into()?) + mds)
     }
 }
 
@@ -114,18 +120,21 @@ mod tests {
 
     #[test]
     fn can_create_data_block() {
-        let _db = DataBlock::new(&vec!(0u8; 8),None).unwrap();
+        let _db = DataBlock::new(&vec![0u8; 8], None).unwrap();
     }
 
     #[test]
     fn can_serialize_data_block() {
-        println!("{:?}", DataBlock::new(&vec!(0u8; 16), None).unwrap().serialize());
+        println!(
+            "{:?}",
+            DataBlock::new(&vec!(0u8; 16), None).unwrap().serialize()
+        );
     }
 
     #[test]
     fn can_deserialize_data_block() {
-        let mut serialized = DataBlock::new(&vec!(50, 24, 24, 100), None).unwrap();
-        let mut db2 = DataBlock::new(&Vec::<u8>::new(),None).unwrap();
+        let mut serialized = DataBlock::new(&vec![50, 24, 24, 100], None).unwrap();
+        let mut db2 = DataBlock::new(&Vec::<u8>::new(), None).unwrap();
         db2.deserialize(serialized.serialize()).unwrap();
         // This is to make sure the db2.header matches serialized.header otherwise we'll fail the
         // assert
