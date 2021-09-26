@@ -39,10 +39,14 @@ pub struct Store {
     block_addresses: Vec<u64>,
 }
 
+/// Utilities for a Store
 pub trait StoreUtils {
-    fn delete(pos: u64) -> Result<(), Box<Error>>;
+    /// Delete block at index
+    fn delete(index: u64) -> Result<(), Box<Error>>;
+    /// Should return the number of blocks availible for access
     fn len() -> u64;
-    fn block_address(index: u64) -> u64;
+    /// Get the address of the block at index
+    fn block_address(index: u64) -> Result<u64, Box<dyn std::error::Error>>;
 }
 
 trait StoreReader {
