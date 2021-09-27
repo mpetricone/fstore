@@ -5,12 +5,13 @@
 // This should ensure all architechures will read files ok.
 // I don't think file size will be an issuee
 pub mod data_block;
-use crate::data_block::BlockSerializer;
+use crate::data_block::{BlockFlags, BlockSerializer};
 use crate::data_block::DataBlock;
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{Error, ErrorKind};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::fmt;
 
 // TODO: is there a better way in rust?
 static STORE_VERSIONTAG: &str = "FSTOREV.01BINARYR01";
@@ -20,6 +21,24 @@ static STORE_VERSIONNUM: u32 = 1;
 static ERROR_FSTORE_VERSION: &str = "Unexpected version info.";
 static ERROR_FSTORE_INVALID: &str = "Invalid file descriptor.";
 static ERROR_FSTORE_INVSIZE: &str = "Unexpected data size encountered.";
+static ERROR_OUTOFBOUNDS: &str = "Value out of bounds.";
+
+#[derive(Debug)]
+pub struct StoreError {
+    error: String,
+}
+
+impl StoreError {
+    fn new(error: String) -> StoreError { StoreError{ error, } }
+}
+
+impl fmt::Display for StoreError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f,"{}", self.error)
+    }
+}
+
+impl std::error::Error for StoreError {}
 
 /// Store manages a file store.
 ///
@@ -40,13 +59,13 @@ pub struct Store {
 }
 
 /// Utilities for a Store
-pub trait StoreUtils {
+pub trait StoreUtils<'a> {
     /// Delete block at index
-    fn delete(index: u64) -> Result<(), Box<Error>>;
+    fn delete(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>>;
     /// Should return the number of blocks availible for access
-    fn len() -> u64;
+    fn len(&self) -> usize;
     /// Get the address of the block at index
-    fn block_address(index: u64) -> Result<u64, Box<dyn std::error::Error>>;
+    fn block_address(&self, index: usize) -> Option<&u64>;
 }
 
 trait StoreReader {
@@ -180,6 +199,28 @@ impl Write for Store {
     fn flush(&mut self) -> Result<(), Error> {
         self.file.flush()
     }
+}
+
+impl StoreUtils<'_> for Store {
+    fn delete(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(address) = self.block_addresses.get(index) {
+            self.file.seek(SeekFrom::Start(*address + u64::try_from(DataBlock::delete_offset())? ))?;
+            self.file.write(&DataBlock::delete_flag().to_le_bytes())?;
+            self.file.seek(SeekFrom::Start(0))?;
+        } else {
+            return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())))
+        }
+        Ok(())
+    }
+
+    fn block_address(&self, index: usize) -> Option<&u64> {
+        self.block_addresses.get(index)
+    }
+
+    fn len(&self) -> usize {
+        self.block_addresses.len()
+    }
+
 }
 
 impl StoreReader for Store {

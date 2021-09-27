@@ -21,6 +21,8 @@ pub trait BlockSerializer {
     /// Minimum size of data needed to read ahead to next block
     fn read_ahead_size() -> usize;
 
+    fn delete_offset() -> usize;
+
     /// gets the amount to seek to next DataBlock
     fn read_ahead(size: &Vec<u8>) -> Result<i64, Box<dyn Error>>;
 }
@@ -28,6 +30,10 @@ pub trait BlockSerializer {
 /// Trait for checksum calculation
 pub trait BlockChecksum {
     fn calculate(&self, data: &[u8]) -> u32;
+}
+
+pub trait BlockFlags {
+    fn delete_flag() -> u32;
 }
 
 /// A Datablock, minus the data.
@@ -72,6 +78,13 @@ impl DataBlock {
     }
 }
 
+impl BlockFlags for DataBlock {
+    #[inline]
+    fn delete_flag() -> u32 {
+        0
+    }
+}
+
 impl BlockSerializer for DataBlock {
     /// Return vector serialized DataBlock
     fn serialize(&mut self) -> &Vec<u8> {
@@ -111,6 +124,11 @@ impl BlockSerializer for DataBlock {
     fn read_ahead(size: &Vec<u8>) -> Result<i64, Box<dyn Error>> {
         let mds = i64::try_from(size_of::<u64>() + (size_of::<u32>() * 2))?;
         Ok(i64::from_le_bytes(size[0..8].try_into()?) + mds)
+    }
+    
+    #[inline]
+    fn delete_offset() -> usize {
+        size_of::<u64>()
     }
 }
 
