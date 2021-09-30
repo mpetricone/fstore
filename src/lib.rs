@@ -5,13 +5,13 @@
 // This should ensure all architechures will read files ok.
 // I don't think file size will be an issuee
 pub mod data_block;
-use crate::data_block::{BlockFlags, BlockSerializer};
 use crate::data_block::DataBlock;
+use crate::data_block::{BlockFlags, BlockSerializer};
 use std::convert::TryFrom;
+use std::fmt;
 use std::fs::File;
 use std::io::{Error, ErrorKind};
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::fmt;
 
 // TODO: is there a better way in rust?
 static STORE_VERSIONTAG: &str = "FSTOREV.01BINARYR01";
@@ -23,18 +23,23 @@ static ERROR_FSTORE_INVALID: &str = "Invalid file descriptor.";
 static ERROR_FSTORE_INVSIZE: &str = "Unexpected data size encountered.";
 static ERROR_OUTOFBOUNDS: &str = "Value out of bounds.";
 
+
+/// Used by some fstore methods
 #[derive(Debug)]
 pub struct StoreError {
     error: String,
 }
 
 impl StoreError {
-    fn new(error: String) -> StoreError { StoreError{ error, } }
+    /// Create new StoreError
+    fn new(error: String) -> StoreError {
+        StoreError { error }
+    }
 }
 
 impl fmt::Display for StoreError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f,"{}", self.error)
+        write!(f, "{}", self.error)
     }
 }
 
@@ -51,10 +56,9 @@ impl std::error::Error for StoreError {}
 pub struct Store {
     /// File data resides in
     file: File,
-    /// next read location
-    //read_size: usize,
     /// the last stream position
     data_start_address: u64,
+    /// Vector of written block addresses
     block_addresses: Vec<u64>,
 }
 
@@ -68,6 +72,7 @@ pub trait StoreUtils<'a> {
     fn block_address(&self, index: usize) -> Option<&u64>;
 }
 
+/// Trait for reading data from a store
 trait StoreReader {
     fn read_data_block(
         &mut self,
@@ -204,11 +209,13 @@ impl Write for Store {
 impl StoreUtils<'_> for Store {
     fn delete(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(address) = self.block_addresses.get(index) {
-            self.file.seek(SeekFrom::Start(*address + u64::try_from(DataBlock::delete_offset())? ))?;
+            self.file.seek(SeekFrom::Start(
+                *address + u64::try_from(DataBlock::delete_offset())?,
+            ))?;
             self.file.write(&DataBlock::delete_flag().to_le_bytes())?;
             self.file.seek(SeekFrom::Start(0))?;
         } else {
-            return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())))
+            return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())));
         }
         Ok(())
     }
@@ -220,7 +227,6 @@ impl StoreUtils<'_> for Store {
     fn len(&self) -> usize {
         self.block_addresses.len()
     }
-
 }
 
 impl StoreReader for Store {

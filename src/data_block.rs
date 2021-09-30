@@ -32,8 +32,11 @@ pub trait BlockChecksum {
     fn calculate(&self, data: &[u8]) -> u32;
 }
 
+/// interface with block flags
 pub trait BlockFlags {
+    /// Get the positive flag value
     fn delete_flag() -> u32;
+    fn set_delete_flag(value: bool, flags: u32) -> u32;
 }
 
 /// A Datablock, minus the data.
@@ -83,6 +86,14 @@ impl BlockFlags for DataBlock {
     fn delete_flag() -> u32 {
         0
     }
+
+    fn set_delete_flag(value: bool,mut  flags: u32 ) -> u32 {
+        flags = flags|0b1;
+        if !value {
+            flags = flags^0b1;
+        }
+        flags
+    }
 }
 
 impl BlockSerializer for DataBlock {
@@ -125,7 +136,7 @@ impl BlockSerializer for DataBlock {
         let mds = i64::try_from(size_of::<u64>() + (size_of::<u32>() * 2))?;
         Ok(i64::from_le_bytes(size[0..8].try_into()?) + mds)
     }
-    
+
     #[inline]
     fn delete_offset() -> usize {
         size_of::<u64>()
@@ -158,5 +169,15 @@ mod tests {
         // assert
         db2.serialize();
         assert_eq!(db2, serialized);
+    }
+
+    #[test]
+    fn can_set_delet_flag() {
+        let mut tflag = 0b0;
+        assert_eq!(DataBlock::set_delete_flag(false, tflag), 0);
+        assert_eq!(DataBlock::set_delete_flag(true, tflag), 1);
+        tflag = 0b1;
+        assert_eq!(DataBlock::set_delete_flag(false, tflag), 0);
+        assert_eq!(DataBlock::set_delete_flag(true, tflag), 1);
     }
 }
