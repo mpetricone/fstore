@@ -56,22 +56,22 @@ pub struct Store {
 }
 
 /// Utilities for a Store
-pub trait StoreUtils<'a> {
+pub trait StoreIO<'a> {
     /// Delete block at index
-    fn delete(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>>;
+    fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>>;
     /// Should return the number of blocks availible for access
     fn len(&self) -> usize;
     /// Get the address of the block at index
     fn block_address(&self, index: usize) -> Option<&u64>;
-}
 
-/// Trait for reading data from a store
-trait StoreReader {
     fn read_data_block(
         &mut self,
         data_block: &mut DataBlock,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn read(&mut self, data: &mut Vec<u8>) -> Result<usize, Error>;
+    fn read_at_index(&mut self, index: usize, data: &mut Vec<u8>) -> Result<usize,Box<dyn std::error::Error>>;
+
+    fn seek(&mut self, index: usize) -> Result<usize, Box<dyn std::error::Error>>;
 }
 
 impl Store {
@@ -187,7 +187,9 @@ impl Write for Store {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
         if let Ok(mut bd) = DataBlock::new(buf, None) {
             self.file.write(bd.serialize())?;
-            return self.file.write(&buf);
+            let retval = self.file.write(&buf);
+            self.block_addresses.push(self.file.seek(SeekFrom::Current(0))?);
+            retval
         } else {
             return Err(Error::new(ErrorKind::InvalidInput, ERROR_FSTORE_INVSIZE));
         }
@@ -199,8 +201,8 @@ impl Write for Store {
     }
 }
 
-impl StoreUtils<'_> for Store {
-    fn delete(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
+impl StoreIO<'_> for Store {
+    fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(address) = self.block_addresses.get(index) {
             self.file.seek(SeekFrom::Start(
                 *address + u64::try_from(DataBlock::delete_offset())?,
@@ -220,9 +222,11 @@ impl StoreUtils<'_> for Store {
     fn len(&self) -> usize {
         self.block_addresses.len()
     }
-}
+    
+    fn seek(&mut self, index: usize) -> Result<usize, Box<dyn std::error::Error>> {
+        //TODO:: finish
+    }
 
-impl StoreReader for Store {
     /// Reads data into buf according to surrounding DataBlock
     fn read_data_block(
         &mut self,
@@ -236,6 +240,15 @@ impl StoreReader for Store {
 
     fn read(&mut self, data: &mut Vec<u8>) -> Result<usize, Error> {
         self.file.read(data)
+    }
+
+    fn read_at_index(&mut self,index: usize, data: &mut Vec<u8>) -> Result<usize, Box<dyn std::error::Error>> {
+        if let Some(a) = self.block_addresses.get(index) {
+            self.file.seek(SeekFrom::Start(*a))?;
+            Ok(self.read(data)?)
+        } else {
+            return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())));
+        }
     }
 }
 
@@ -275,5 +288,22 @@ mod tests {
         let mut data = vec![0u8; db.data_size().unwrap()];
         s.read(&mut data).unwrap();
         assert_eq!(testval, data);
+    }
+
+    #[test]
+    fn can_delete_block() {
+        let v = [
+            vec!(1, 244, 231,13,42,1,2,3,4,5,6,7),
+            vec!(1,2,3,4,5,6,7,8,9,0),
+            vec!(11,12,13,14,15,16,17,18,19,20),
+        ];
+        let mut s = Store::create("testout/delete.tst".to_string()).unwrap();
+        for i in v {
+            s.write(&i).unwrap();
+        }
+        s.delete_block(2).unwrap();
+        let mut db = DataBlock::new(&[0u8], None).unwrap();
+        
+        s.read_data_block(
     }
 }
