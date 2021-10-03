@@ -4,7 +4,8 @@ use std::convert::TryInto;
 use std::error::Error;
 use std::mem::size_of;
 
-const STATE_FLAG_ALLOC: u32 = 0b1;
+const STATE_FLAG_ALLOC: u32 = 0b0;
+const STATE_FLAG_DELETE: u32 = 0b1;
 const DEFAULT_ADDR_NEXT: u64 = 0;
 
 /// Trait for preparing a Datablock for writing to stream
@@ -48,7 +49,7 @@ pub struct DataBlock {
     size_data: u64,
     /// state of block.
     /// usually a 1 for allocated
-    state_flag: u32,
+    pub state_flag: u32,
     /// address of next DataBlock in file containing appended data
     address_next: u64,
     /// checksum of data in this block. 0 if not used.
@@ -84,13 +85,13 @@ impl DataBlock {
 impl BlockFlags for DataBlock {
     #[inline]
     fn delete_flag() -> u32 {
-        0
+        STATE_FLAG_DELETE
     }
 
     fn set_delete_flag(value: bool,mut  flags: u32 ) -> u32 {
-        flags = flags|0b1;
+        flags = flags|STATE_FLAG_DELETE;
         if !value {
-            flags = flags^0b1;
+            flags = flags^STATE_FLAG_DELETE;
         }
         flags
     }

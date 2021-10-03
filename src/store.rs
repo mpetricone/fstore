@@ -1,8 +1,9 @@
+// Coyright 2021 Matthew Petricone
 use crate::data_block::DataBlock;
 use crate::data_block::{BlockFlags, BlockSerializer};
 use std::convert::TryFrom;
 use std::fmt;
-use std::fs::File;
+use std::fs::{ File, OpenOptions };
 use std::io::{Error, ErrorKind};
 use std::io::{Read, Seek, SeekFrom, Write};
 
@@ -71,7 +72,7 @@ pub trait StoreIO<'a> {
     fn read(&mut self, data: &mut Vec<u8>) -> Result<usize, Error>;
     fn read_at_index(&mut self, index: usize, data: &mut Vec<u8>) -> Result<usize,Box<dyn std::error::Error>>;
 
-    fn seek(&mut self, index: usize) -> Result<usize, Box<dyn std::error::Error>>;
+    fn seek(&mut self, index: usize) -> Result<u64, Box<dyn std::error::Error>>;
 }
 
 impl Store {
@@ -100,7 +101,7 @@ impl Store {
     ///
     ///Will overwrite an existing store.
     pub fn create(filename: String) -> Result<Store, Error> {
-        let mut f = File::create(filename)?;
+        let mut f = OpenOptions::new().write(true).read(true).create(true).open(filename)?;
         Store::write_file_descriptor(&mut f)?;
         Ok(Store {
             file: f,
@@ -223,8 +224,12 @@ impl StoreIO<'_> for Store {
         self.block_addresses.len()
     }
     
-    fn seek(&mut self, index: usize) -> Result<usize, Box<dyn std::error::Error>> {
-        //TODO:: finish
+    fn seek(&mut self, index: usize) -> Result<u64, Box<dyn std::error::Error>> {
+        if let Some(a) = self.block_addresses.get(index) {
+            Ok(self.file.seek(SeekFrom::Start(*a))?)
+        } else {
+            return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())));
+        }
     }
 
     /// Reads data into buf according to surrounding DataBlock
@@ -303,7 +308,8 @@ mod tests {
         }
         s.delete_block(2).unwrap();
         let mut db = DataBlock::new(&[0u8], None).unwrap();
-        
-        s.read_data_block(
+        s.seek(2).unwrap();
+        s.read_data_block(&mut db).unwrap();
+        assert_eq!(DataBlock::delete_flag(),db.state_flag );
     }
 }
