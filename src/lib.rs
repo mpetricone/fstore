@@ -6,3 +6,4 @@
 // I don't think file size will be an issuee
 pub mod data_block;
 pub mod store;
+pub mod crypto;

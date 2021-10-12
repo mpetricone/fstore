@@ -53,7 +53,7 @@ pub struct DataBlock {
     /// address of next DataBlock in file containing appended data
     address_next: u64,
     /// checksum of data in this block. 0 if not used.
-    checksum: u32,
+    checksum: [u8],
     /// Vector of DataBlock header
     header: Vec<u8>,
 }
