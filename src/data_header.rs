@@ -3,12 +3,13 @@ use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::error::Error;
 use std::mem::size_of;
+use crate::crypto::BlockHasher;
 
 const STATE_FLAG_ALLOC: u32 = 0b0;
 const STATE_FLAG_DELETE: u32 = 0b1;
 const DEFAULT_ADDR_NEXT: u64 = 0;
 
-/// Trait for preparing a Datablock for writing to stream
+/// Trait for preparing a DataHeader for writing to stream
 pub trait BlockSerializer {
     /// Create a vector of data ready to be written
     ///
@@ -24,13 +25,8 @@ pub trait BlockSerializer {
 
     fn delete_offset() -> usize;
 
-    /// gets the amount to seek to next DataBlock
+    /// gets the amount to seek to next DataHeader
     fn read_ahead(size: &Vec<u8>) -> Result<i64, Box<dyn Error>>;
-}
-
-/// Trait for checksum calculation
-pub trait BlockChecksum {
-    fn calculate(&self, data: &[u8]) -> u32;
 }
 
 /// interface with block flags
@@ -40,39 +36,39 @@ pub trait BlockFlags {
     fn set_delete_flag(value: bool, flags: u32) -> u32;
 }
 
-/// A Datablock, minus the data.
+/// A DataHeader, minus the data.
 ///
 /// It should probably be renamed DataHeader
 #[derive(PartialEq, Debug)]
-pub struct DataBlock {
+pub struct DataHeader<T: BlockHasher<T>> {
     /// size of data in this block
     size_data: u64,
     /// state of block.
     /// usually a 1 for allocated
     pub state_flag: u32,
-    /// address of next DataBlock in file containing appended data
+    /// address of next DataHeader in file containing appended data
     address_next: u64,
     /// checksum of data in this block. 0 if not used.
-    checksum: u32,
-    /// Vector of DataBlock header
+    checksum: T,
+    /// Vector of DataHeader header
     header: Vec<u8>,
 }
 
-impl DataBlock {
+impl<T> DataHeader<T> {
     /// create Data block, get size (& eventually checksum from data)
     pub fn new(
         data: &[u8],
-        checksum: Option<&dyn BlockChecksum>,
-    ) -> Result<DataBlock, Box<dyn Error>> {
+        checksum: Option<T>,
+    ) -> Result<DataHeader<T>, Box<dyn Error>> {
         let mut cs = 0;
         if let Some(check) = checksum {
             cs = check.calculate(data);
         }
-        Ok(DataBlock {
+        Ok(DataHeader {
             size_data: u64::try_from(data.len())?,
             state_flag: STATE_FLAG_ALLOC,
             address_next: DEFAULT_ADDR_NEXT,
-            checksum: cs,
+            checksum,
             header: vec![0],
         })
     }
@@ -82,7 +78,7 @@ impl DataBlock {
     }
 }
 
-impl BlockFlags for DataBlock {
+impl<T> BlockFlags for DataHeader<T> {
     #[inline]
     fn delete_flag() -> u32 {
         STATE_FLAG_DELETE
@@ -97,8 +93,8 @@ impl BlockFlags for DataBlock {
     }
 }
 
-impl BlockSerializer for DataBlock {
-    /// Return vector serialized DataBlock
+impl<T> BlockSerializer for DataHeader<T> {
+    /// Return vector serialized DataHeader
     fn serialize(&mut self) -> &Vec<u8> {
         self.header.clear();
         self.header
@@ -150,21 +146,21 @@ mod tests {
 
     #[test]
     fn can_create_data_block() {
-        let _db = DataBlock::new(&vec![0u8; 8], None).unwrap();
+        let _db = DataHeader::new(&vec![0u8; 8], None).unwrap();
     }
 
     #[test]
     fn can_serialize_data_block() {
         println!(
             "{:?}",
-            DataBlock::new(&vec!(0u8; 16), None).unwrap().serialize()
+            DataHeader::new(&vec!(0u8; 16), None).unwrap().serialize()
         );
     }
 
     #[test]
     fn can_deserialize_data_block() {
-        let mut serialized = DataBlock::new(&vec![50, 24, 24, 100], None).unwrap();
-        let mut db2 = DataBlock::new(&Vec::<u8>::new(), None).unwrap();
+        let mut serialized = DataHeader::new(&vec![50, 24, 24, 100], None).unwrap();
+        let mut db2 = DataHeader::new(&Vec::<u8>::new(), None).unwrap();
         db2.deserialize(serialized.serialize()).unwrap();
         // This is to make sure the db2.header matches serialized.header otherwise we'll fail the
         // assert
@@ -175,10 +171,10 @@ mod tests {
     #[test]
     fn can_set_delet_flag() {
         let mut tflag = 0b0;
-        assert_eq!(DataBlock::set_delete_flag(false, tflag), 0);
-        assert_eq!(DataBlock::set_delete_flag(true, tflag), 1);
+        assert_eq!(DataHeader::set_delete_flag(false, tflag), 0);
+        assert_eq!(DataHeader::set_delete_flag(true, tflag), 1);
         tflag = 0b1;
-        assert_eq!(DataBlock::set_delete_flag(false, tflag), 0);
-        assert_eq!(DataBlock::set_delete_flag(true, tflag), 1);
+        assert_eq!(DataHeader::set_delete_flag(false, tflag), 0);
+        assert_eq!(DataHeader::set_delete_flag(true, tflag), 1);
     }
 }

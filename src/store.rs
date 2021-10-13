@@ -1,6 +1,7 @@
 // Coyright 2021 Matthew Petricone
-use crate::data_block::DataBlock;
-use crate::data_block::{BlockFlags, BlockSerializer};
+use crate::data_header::DataHeader;
+use crate::data_header::{BlockFlags, BlockSerializer};
+use crate::crypto::BlockHasher;
 use std::convert::TryFrom;
 use std::fmt;
 use std::fs::{ File, OpenOptions };
@@ -43,11 +44,11 @@ impl std::error::Error for StoreError {}
 ///
 /// Data is written in blocks of arbitrary size.
 ///
-/// Consult DataBlock for block details.
+/// Consult DataHeader for block details.
 ///
 /// There is a 32bit checksum availible for each block.
 ///
-pub struct Store {
+pub struct Store<T: BlockHasher<T>> {
     /// File data resides in
     file: File,
     /// the last stream position
@@ -57,7 +58,7 @@ pub struct Store {
 }
 
 /// Utilities for a Store
-pub trait StoreIO<'a> {
+pub trait StoreIO<'a, T: BlockHasher<T>> {
     /// Delete block at index
     fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>>;
     /// Should return the number of blocks availible for access
@@ -65,9 +66,9 @@ pub trait StoreIO<'a> {
     /// Get the address of the block at index
     fn block_address(&self, index: usize) -> Option<&u64>;
 
-    fn read_data_block(
+    fn read_data_header(
         &mut self,
-        data_block: &mut DataBlock,
+        data_header: &mut DataHeader<T>,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn read(&mut self, data: &mut Vec<u8>) -> Result<usize, Error>;
     fn read_at_index(&mut self, index: usize, data: &mut Vec<u8>) -> Result<usize,Box<dyn std::error::Error>>;
@@ -75,11 +76,11 @@ pub trait StoreIO<'a> {
     fn seek(&mut self, index: usize) -> Result<u64, Box<dyn std::error::Error>>;
 }
 
-impl Store {
+impl<T> Store<T> {
     /// Open existing Store file
     ///
     /// Will return an error if the file is not a Store file
-    pub fn new(filename: String) -> Result<Store, Box<dyn std::error::Error>> {
+    pub fn new(filename: String) -> Result<Store<T>, Box<dyn std::error::Error>> {
         let v = File::open(filename)?;
         let mut st = Store {
             file: v,
@@ -100,7 +101,7 @@ impl Store {
     ///Create new Store file
     ///
     ///Will overwrite an existing store.
-    pub fn create(filename: String) -> Result<Store, Error> {
+    pub fn create(filename: String) -> Result<Store<T>, Error> {
         let mut f = OpenOptions::new().write(true).read(true).create(true).open(filename)?;
         Store::write_file_descriptor(&mut f)?;
         Ok(Store {
@@ -161,7 +162,7 @@ impl Store {
             startpos
         };
         // size of read ahead data
-        let buffsize = DataBlock::read_ahead_size();
+        let buffsize = DataHeader::read_ahead_size();
         // get metadata for file once
         let md = self.file.metadata()?;
         // Insert the first block address
@@ -173,8 +174,8 @@ impl Store {
             // read the data, then pass it to dataBlock::read_ahead
             self.file.read(&mut buffer)?;
             // TODO: I think this logic is wrong, we want a more generic way to do this.
-            let tbs = DataBlock::read_ahead(&buffer)?;
-            // update curpos with next DataBlock addess, then push that onto the list
+            let tbs = DataHeader::read_ahead(&buffer)?;
+            // update curpos with next DataHeader addess, then push that onto the list
             curpos = self.file.seek(SeekFrom::Current(tbs))?;
             self.block_addresses.push(curpos);
         }
@@ -183,10 +184,10 @@ impl Store {
     }
 }
 
-impl Write for Store {
-    /// Writes data in buf to file, encapsulated in a DataBlock
+impl<T> Write for Store<T> {
+    /// Writes data in buf to file, encapsulated in a DataHeader
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        if let Ok(mut bd) = DataBlock::new(buf, None) {
+        if let Ok(mut bd) = DataHeader::new(buf, None) {
             self.file.write(bd.serialize())?;
             let retval = self.file.write(&buf);
             self.block_addresses.push(self.file.seek(SeekFrom::Current(0))?);
@@ -202,13 +203,13 @@ impl Write for Store {
     }
 }
 
-impl StoreIO<'_> for Store {
+impl<T> StoreIO<'_, T> for Store<T> {
     fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(address) = self.block_addresses.get(index) {
             self.file.seek(SeekFrom::Start(
-                *address + u64::try_from(DataBlock::delete_offset())?,
+                *address + u64::try_from(DataHeader::delete_offset())?,
             ))?;
-            self.file.write(&DataBlock::delete_flag().to_le_bytes())?;
+            self.file.write(&DataHeader::delete_flag().to_le_bytes())?;
             self.file.seek(SeekFrom::Start(0))?;
         } else {
             return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())));
@@ -232,14 +233,14 @@ impl StoreIO<'_> for Store {
         }
     }
 
-    /// Reads data into buf according to surrounding DataBlock
-    fn read_data_block(
+    /// Reads data into buf according to surrounding DataHeader
+    fn read_data_header(
         &mut self,
-        data_block: &mut DataBlock,
+        data_header: &mut DataHeader<T>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut db_buf = vec![0u8; DataBlock::size()];
+        let mut db_buf = vec![0u8; DataHeader::size()];
         self.file.read(&mut db_buf)?;
-        data_block.deserialize(&db_buf)?;
+        data_header.deserialize(&db_buf)?;
         Ok(())
     }
 
@@ -260,7 +261,7 @@ impl StoreIO<'_> for Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_block::DataBlock;
+    use crate::data_header::DataHeader;
     use crate::store::Store;
     use std::io::Write;
 
@@ -287,9 +288,9 @@ mod tests {
             }
         }
 
-        let mut db = DataBlock::new(&[0u8], None).unwrap();
+        let mut db = DataHeader::new(&[0u8], None).unwrap();
         let mut s = Store::new("testout/store.test.st".to_string()).unwrap();
-        s.read_data_block(&mut db).unwrap();
+        s.read_data_header(&mut db).unwrap();
         let mut data = vec![0u8; db.data_size().unwrap()];
         s.read(&mut data).unwrap();
         assert_eq!(testval, data);
@@ -307,9 +308,9 @@ mod tests {
             s.write(&i).unwrap();
         }
         s.delete_block(2).unwrap();
-        let mut db = DataBlock::new(&[0u8], None).unwrap();
+        let mut db = DataHeader::new(&[0u8], None).unwrap();
         s.seek(2).unwrap();
-        s.read_data_block(&mut db).unwrap();
-        assert_eq!(DataBlock::delete_flag(),db.state_flag );
+        s.read_data_header(&mut db).unwrap();
+        assert_eq!(DataHeader::delete_flag(),db.state_flag );
     }
 }
