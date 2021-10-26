@@ -169,7 +169,7 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<U, T> {
             startpos
         };
         // size of read ahead data
-        let buffsize = DataHeader::read_ahead_size();
+        let buffsize = DataHeader::<U, T>::read_ahead_size();
         // get metadata for file once
         let md = self.file.metadata()?;
         // Insert the first block address
@@ -181,7 +181,7 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<U, T> {
             // read the data, then pass it to dataBlock::read_ahead
             self.file.read(&mut buffer)?;
             // TODO: I think this logic is wrong, we want a more generic way to do this.
-            let tbs = DataHeader::read_ahead(&buffer)?;
+            let tbs = DataHeader::<U, T>::read_ahead(&buffer)?;
             // update curpos with next DataHeader addess, then push that onto the list
             curpos = self.file.seek(SeekFrom::Current(tbs))?;
             self.block_addresses.push(curpos);
@@ -194,8 +194,8 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<U, T> {
 impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> Write for Store<U, T> {
     /// Writes data in buf to file, encapsulated in a DataHeader
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        if let Ok(mut bd) = DataHeader::new(buf, None) {
-            self.file.write(bd.serialize())?;
+        if let Ok(mut bd) = DataHeader::<U,T>::new(buf, &self.hasher) {
+            self.file.write(bd.serialize(buf))?;
             let retval = self.file.write(&buf);
             self.block_addresses.push(self.file.seek(SeekFrom::Current(0))?);
             retval
@@ -214,9 +214,9 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> StoreIO<'_,U, T> for Store<U, 
     fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(address) = self.block_addresses.get(index) {
             self.file.seek(SeekFrom::Start(
-                *address + u64::try_from(DataHeader::delete_offset())?,
+                *address + u64::try_from(DataHeader::<U,T>::delete_offset())?,
             ))?;
-            self.file.write(&DataHeader::delete_flag().to_le_bytes())?;
+            self.file.write(&DataHeader::<U, T>::delete_flag().to_le_bytes())?;
             self.file.seek(SeekFrom::Start(0))?;
         } else {
             return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())));
@@ -245,7 +245,7 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> StoreIO<'_,U, T> for Store<U, 
         &mut self,
         data_header: &mut DataHeader<U, T>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut db_buf = vec![0u8; DataHeader::size()];
+        let mut db_buf = vec![0u8; DataHeader::<U, T>::size()];
         self.file.read(&mut db_buf)?;
         data_header.deserialize(&db_buf)?;
         Ok(())
@@ -270,6 +270,7 @@ mod tests {
     use super::*;
     use crate::data_header::DataHeader;
     use crate::store::Store;
+    use crate::crypto::B3BlockHasher;
     use std::io::Write;
 
     fn fill_test_vector(data: &mut Vec<u8>) {
@@ -277,7 +278,7 @@ mod tests {
     }
     #[test]
     fn can_write_to_store() {
-        let mut s = Store::create("testout/store.st".to_string()).unwrap();
+        let mut s = Store::<&[u8], B3BlockHasher>::create("testout/store.st".to_string(), B3BlockHasher::default()).unwrap();
         let mut buf = vec![0, 1, 3, 4, 5, 11, 33, 0];
         s.write(&mut buf).unwrap();
         s.write(&mut buf).unwrap();
@@ -288,15 +289,15 @@ mod tests {
         let mut testval = Vec::new();
         fill_test_vector(&mut testval);
         {
-            let mut s = Store::create("testout/store.test.st".to_string()).unwrap();
+            let mut s = Store::<&[u8], B3BlockHasher>::create("testout/store.test.st".to_string(), B3BlockHasher::default()).unwrap();
             for _i in 1..10 {
                 s.write(&testval).unwrap();
                 s.write(&testval).unwrap();
             }
         }
 
-        let mut db = DataHeader::new(&[0u8], None).unwrap();
-        let mut s = Store::new("testout/store.test.st".to_string()).unwrap();
+        let mut db = DataHeader::<&[u8], B3BlockHasher>::new(&[0u8],B3BlockHasher::default()).unwrap();
+        let mut s = Store::<&[u8], B3BlockHasher>::new("testout/store.test.st".to_string(), B3BlockHasher::default()).unwrap();
         s.read_data_header(&mut db).unwrap();
         let mut data = vec![0u8; db.data_size().unwrap()];
         s.read(&mut data).unwrap();
@@ -310,14 +311,14 @@ mod tests {
             vec!(1,2,3,4,5,6,7,8,9,0),
             vec!(11,12,13,14,15,16,17,18,19,20),
         ];
-        let mut s = Store::create("testout/delete.tst".to_string()).unwrap();
+        let mut s = Store::<&[u8], B3BlockHasher>::create("testout/delete.tst".to_string(), B3BlockHasher::default()).unwrap();
         for i in v {
             s.write(&i).unwrap();
         }
         s.delete_block(2).unwrap();
-        let mut db = DataHeader::new(&[0u8], None).unwrap();
+        let mut db = DataHeader::<&[u8], B3BlockHasher>::new(&[0u8], B3BlockHasher::default()).unwrap();
         s.seek(2).unwrap();
         s.read_data_header(&mut db).unwrap();
-        assert_eq!(DataHeader::delete_flag(),db.state_flag );
+        assert_eq!(DataHeader::<&[u8], B3BlockHasher>::delete_flag(),db.state_flag );
     }
 }

@@ -16,7 +16,7 @@ pub trait BlockHasher<T: Eq + PartialEq + Copy> {
 #[derive(Default)]
 pub struct B3BlockHasher {
     /// Stores the value of hash as bytes, not aligned.
-    hash_value: [u8;  32],
+    pub hash_value: [u8;  32],
 }
 
 impl BlockHasher<&[u8]> for B3BlockHasher {
@@ -29,4 +29,13 @@ impl BlockHasher<&[u8]> for B3BlockHasher {
     fn size() -> usize {
         256
     }
+}
+
+#[derive(Default)]
+pub struct NullBlockHasher {
+}
+
+impl BlockHasher<u8> for NullBlockHasher {
+    fn hash(&mut self, _input: &[u8]) -> &[u8] { &[0] }
+    fn size() -> usize { 0 }
 }

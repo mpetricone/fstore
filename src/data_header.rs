@@ -4,7 +4,8 @@ use std::convert::TryInto;
 use std::error::Error;
 use std::mem::size_of;
 use std::marker::PhantomData;
-use crate::crypto::BlockHasher;
+use crate::crypto::{BlockHasher};
+
 
 const STATE_FLAG_ALLOC: u32 = 0b0;
 const STATE_FLAG_DELETE: u32 = 0b1;
@@ -19,7 +20,7 @@ pub trait BlockSerializer {
     fn deserialize(&mut self, data: &Vec<u8>) -> Result<(), Box<dyn Error>>;
 
     /// size in bytes of the serialized data
-    fn size(&self) -> usize;
+    fn size() -> usize;
 
     /// Minimum size of data needed to read ahead to next block
     fn read_ahead_size() -> usize;
@@ -41,7 +42,7 @@ pub trait BlockFlags {
 ///
 /// It should probably be renamed DataHeader
 #[derive(PartialEq, Debug)]
-pub struct DataHeader<U: Eq + PartialEq + Copy, T: BlockHasher<U>> {
+pub struct DataHeader<'a, U: Eq + PartialEq + Copy, &'a mut T: BlockHasher<U>> {
     /// size of data in this block
     size_data: u64,
     /// state of block.
@@ -51,17 +52,16 @@ pub struct DataHeader<U: Eq + PartialEq + Copy, T: BlockHasher<U>> {
     address_next: u64,
     /// Vector of DataHeader header
     header: Vec<u8>,
-    hasher: T,
+    hasher: &'a mut T,
     phantom: PhantomData<U>,
 }
 
-impl<U:Eq + PartialEq + Copy ,T: BlockHasher<U>> DataHeader<U, T> {
+impl<'a, U:Eq + PartialEq + Copy ,&'a mut T: BlockHasher<U>> DataHeader<'a, U, T> {
     /// create Data block, get size (& eventually checksum from data)
     pub fn new(
         data: &[u8],
-        hasher: T
-    ) -> Result<DataHeader<U, T>, Box<dyn Error>> {
-        let mut cs = 0;
+        hasher: &'a mut T
+    ) -> Result<DataHeader<'a, U, &'a mut T>, Box<dyn Error>> {
         Ok(DataHeader {
             size_data: u64::try_from(data.len())?,
             state_flag: STATE_FLAG_ALLOC,
@@ -77,7 +77,7 @@ impl<U:Eq + PartialEq + Copy ,T: BlockHasher<U>> DataHeader<U, T> {
     }
 }
 
-impl<U: Eq + PartialEq + Copy,T: BlockHasher<U>> BlockFlags for DataHeader<U, T> {
+impl<'a, U: Eq + PartialEq + Copy,T: BlockHasher<U>> BlockFlags for DataHeader<'a, U, T> {
     #[inline]
     fn delete_flag() -> u32 {
         STATE_FLAG_DELETE
@@ -92,7 +92,7 @@ impl<U: Eq + PartialEq + Copy,T: BlockHasher<U>> BlockFlags for DataHeader<U, T>
     }
 }
 
-impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader<U, T> {
+impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader<'a, U, T> {
     /// Return vector serialized DataHeader
     fn serialize(&mut self, data: &[u8]) -> &Vec<u8> {
         self.header.clear();
@@ -103,7 +103,7 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader
         self.header
             .append(&mut self.address_next.to_le_bytes().to_vec());
         self.header
-            .append(&mut self.hasher.hash(data).to_vec());
+            .append(&mut self.hasher.hash(data).clone().to_vec());
         &self.header
     }
 
@@ -124,7 +124,7 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader
     }
 
     #[inline]
-    fn size(&self) -> usize {
+    fn size() -> usize {
         (size_of::<u64>() * 2) + size_of::<u32>() + T::size()
     }
 
@@ -147,38 +147,40 @@ impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto::{ NullBlockHasher, B3BlockHasher};
 
     #[test]
     fn can_create_data_block() {
-        let _db = DataHeader::new(&vec![0u8; 8], None).unwrap();
+        let _db = DataHeader::<&[u8],B3BlockHasher>::new(&vec![0u8; 8], B3BlockHasher::default() ).unwrap();
     }
 
     #[test]
     fn can_serialize_data_block() {
         println!(
             "{:?}",
-            DataHeader::new(&vec!(0u8; 16), None).unwrap().serialize()
+            DataHeader::<u8,NullBlockHasher>::new(&vec!(0u8; 16), NullBlockHasher::default()).unwrap().serialize(&[0u8])
         );
     }
 
     #[test]
     fn can_deserialize_data_block() {
-        let mut serialized = DataHeader::new(&vec![50, 24, 24, 100], None).unwrap();
-        let mut db2 = DataHeader::new(&Vec::<u8>::new(), None).unwrap();
-        db2.deserialize(serialized.serialize()).unwrap();
+        let data = [0u8];
+        let mut serialized = DataHeader::<&[u8], B3BlockHasher>::new(&vec![50, 24, 24, 100], B3BlockHasher::default()).unwrap();
+        let mut db2 = DataHeader::<&[u8], B3BlockHasher>::new(&Vec::<u8>::new(), B3BlockHasher::default()).unwrap();
+        db2.deserialize(serialized.serialize(&data)).unwrap();
         // This is to make sure the db2.header matches serialized.header otherwise we'll fail the
         // assert
-        db2.serialize();
+        db2.serialize(&data);
         assert_eq!(db2, serialized);
     }
 
     #[test]
     fn can_set_delet_flag() {
         let mut tflag = 0b0;
-        assert_eq!(DataHeader::set_delete_flag(false, tflag), 0);
-        assert_eq!(DataHeader::set_delete_flag(true, tflag), 1);
+        assert_eq!(DataHeader::<&[u8],B3BlockHasher>::set_delete_flag(false, tflag), 0);
+        assert_eq!(DataHeader::<&[u8],B3BlockHasher>::set_delete_flag(true, tflag), 1);
         tflag = 0b1;
-        assert_eq!(DataHeader::set_delete_flag(false, tflag), 0);
-        assert_eq!(DataHeader::set_delete_flag(true, tflag), 1);
+        assert_eq!(DataHeader::<&[u8],B3BlockHasher>::set_delete_flag(false, tflag), 0);
+        assert_eq!(DataHeader::<&[u8],B3BlockHasher>::set_delete_flag(true, tflag), 1);
     }
 }
