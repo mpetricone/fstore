@@ -7,10 +7,9 @@ use blake3;
 pub trait BlockHasher<T: Eq + PartialEq + Copy> {
     
     /// Generate hash from input
-    fn hash(&mut self, input: &[u8]) -> &T;
-
+    fn hash(&mut self, input: &[u8]) -> &[u8];
     /// Size of hash
-    fn hash_size() -> usize;
+    fn size() -> usize;
 }
 
 /// Blake3 Hasher
@@ -20,14 +19,14 @@ pub struct B3BlockHasher {
     hash_value: [u8;  32],
 }
 
-impl BlockHasher<[u8; 32]> for B3BlockHasher {
+impl BlockHasher<&[u8]> for B3BlockHasher {
 
-    fn hash(&mut self, input: &[u8]) -> &[u8; 32] {
+    fn hash(&mut self, input: &[u8]) -> &[u8] {
         self.hash_value = *blake3::hash(input).as_bytes();
         &self.hash_value
     }
 
-    fn hash_size() -> usize {
+    fn size() -> usize {
         256
     }
 }

@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 use std::convert::TryInto;
 use std::error::Error;
 use std::mem::size_of;
+use std::marker::PhantomData;
 use crate::crypto::BlockHasher;
 
 const STATE_FLAG_ALLOC: u32 = 0b0;
@@ -13,12 +14,12 @@ const DEFAULT_ADDR_NEXT: u64 = 0;
 pub trait BlockSerializer {
     /// Create a vector of data ready to be written
     ///
-    fn serialize(&mut self) -> &Vec<u8>;
+    fn serialize(&mut self, data: &[u8]) -> &Vec<u8>;
 
     fn deserialize(&mut self, data: &Vec<u8>) -> Result<(), Box<dyn Error>>;
 
     /// size in bytes of the serialized data
-    fn size() -> usize;
+    fn size(&self) -> usize;
 
     /// Minimum size of data needed to read ahead to next block
     fn read_ahead_size() -> usize;
@@ -36,11 +37,11 @@ pub trait BlockFlags {
     fn set_delete_flag(value: bool, flags: u32) -> u32;
 }
 
-/// A DataHeader, minus the data.
+/// A DataHeader, minus the data.debuggers
 ///
 /// It should probably be renamed DataHeader
 #[derive(PartialEq, Debug)]
-pub struct DataHeader<T: BlockHasher<T>> {
+pub struct DataHeader<U: Eq + PartialEq + Copy, T: BlockHasher<U>> {
     /// size of data in this block
     size_data: u64,
     /// state of block.
@@ -48,28 +49,26 @@ pub struct DataHeader<T: BlockHasher<T>> {
     pub state_flag: u32,
     /// address of next DataHeader in file containing appended data
     address_next: u64,
-    /// checksum of data in this block. 0 if not used.
-    checksum: T,
     /// Vector of DataHeader header
     header: Vec<u8>,
+    hasher: T,
+    phantom: PhantomData<U>,
 }
 
-impl<T> DataHeader<T> {
+impl<U:Eq + PartialEq + Copy ,T: BlockHasher<U>> DataHeader<U, T> {
     /// create Data block, get size (& eventually checksum from data)
     pub fn new(
         data: &[u8],
-        checksum: Option<T>,
-    ) -> Result<DataHeader<T>, Box<dyn Error>> {
+        hasher: T
+    ) -> Result<DataHeader<U, T>, Box<dyn Error>> {
         let mut cs = 0;
-        if let Some(check) = checksum {
-            cs = check.calculate(data);
-        }
         Ok(DataHeader {
             size_data: u64::try_from(data.len())?,
             state_flag: STATE_FLAG_ALLOC,
             address_next: DEFAULT_ADDR_NEXT,
-            checksum,
             header: vec![0],
+            hasher,
+            phantom: PhantomData,
         })
     }
 
@@ -78,7 +77,7 @@ impl<T> DataHeader<T> {
     }
 }
 
-impl<T> BlockFlags for DataHeader<T> {
+impl<U: Eq + PartialEq + Copy,T: BlockHasher<U>> BlockFlags for DataHeader<U, T> {
     #[inline]
     fn delete_flag() -> u32 {
         STATE_FLAG_DELETE
@@ -93,9 +92,9 @@ impl<T> BlockFlags for DataHeader<T> {
     }
 }
 
-impl<T> BlockSerializer for DataHeader<T> {
+impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader<U, T> {
     /// Return vector serialized DataHeader
-    fn serialize(&mut self) -> &Vec<u8> {
+    fn serialize(&mut self, data: &[u8]) -> &Vec<u8> {
         self.header.clear();
         self.header
             .append(&mut self.size_data.to_le_bytes().to_vec());
@@ -104,7 +103,7 @@ impl<T> BlockSerializer for DataHeader<T> {
         self.header
             .append(&mut self.address_next.to_le_bytes().to_vec());
         self.header
-            .append(&mut self.checksum.to_le_bytes().to_vec());
+            .append(&mut self.hasher.hash(data).to_vec());
         &self.header
     }
 
@@ -115,13 +114,18 @@ impl<T> BlockSerializer for DataHeader<T> {
         self.size_data = u64::from_le_bytes(data[0..8].try_into()?);
         self.state_flag = u32::from_le_bytes(data[8..12].try_into()?);
         self.address_next = u64::from_le_bytes(data[12..20].try_into()?);
-        self.checksum = u32::from_le_bytes(data[20..24].try_into()?);
+        if self.hasher.hash(data) != &data[20..] {
+            return Err(
+                Box::new(
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, 
+                        "Block Hashes do not match.")))
+        }
         Ok(())
     }
 
     #[inline]
-    fn size() -> usize {
-        (size_of::<u64>() * 2) + (size_of::<u32>() * 2)
+    fn size(&self) -> usize {
+        (size_of::<u64>() * 2) + size_of::<u32>() + T::size()
     }
 
     #[inline]
@@ -130,8 +134,8 @@ impl<T> BlockSerializer for DataHeader<T> {
     }
 
     fn read_ahead(size: &Vec<u8>) -> Result<i64, Box<dyn Error>> {
-        let mds = i64::try_from(size_of::<u64>() + (size_of::<u32>() * 2))?;
-        Ok(i64::from_le_bytes(size[0..8].try_into()?) + mds)
+        let mds = i64::try_from(size_of::<u64>() + size_of::<u32>() + T::size() )?;
+        Ok(mds)
     }
 
     #[inline]

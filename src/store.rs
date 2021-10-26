@@ -7,6 +7,7 @@ use std::fmt;
 use std::fs::{ File, OpenOptions };
 use std::io::{Error, ErrorKind};
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::marker::PhantomData;
 
 // TODO: is there a better way in rust?
 static STORE_VERSIONTAG: &str = "FSTOREV.01BINARYR01";
@@ -48,17 +49,19 @@ impl std::error::Error for StoreError {}
 ///
 /// There is a 32bit checksum availible for each block.
 ///
-pub struct Store<T: BlockHasher<T>> {
+pub struct Store<U: Eq + PartialEq + Copy, T: BlockHasher<U>> {
     /// File data resides in
     file: File,
     /// the last stream position
     data_start_address: u64,
     /// Vector of written block addresses
     block_addresses: Vec<u64>,
+    hasher: T,
+    phantom: PhantomData<U>,
 }
 
 /// Utilities for a Store
-pub trait StoreIO<'a, T: BlockHasher<T>> {
+pub trait StoreIO<'a,U: Eq + PartialEq + Copy, T: BlockHasher<U>> {
     /// Delete block at index
     fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>>;
     /// Should return the number of blocks availible for access
@@ -68,7 +71,7 @@ pub trait StoreIO<'a, T: BlockHasher<T>> {
 
     fn read_data_header(
         &mut self,
-        data_header: &mut DataHeader<T>,
+        data_header: &mut DataHeader<U, T>,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn read(&mut self, data: &mut Vec<u8>) -> Result<usize, Error>;
     fn read_at_index(&mut self, index: usize, data: &mut Vec<u8>) -> Result<usize,Box<dyn std::error::Error>>;
@@ -76,19 +79,21 @@ pub trait StoreIO<'a, T: BlockHasher<T>> {
     fn seek(&mut self, index: usize) -> Result<u64, Box<dyn std::error::Error>>;
 }
 
-impl<T> Store<T> {
+impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<U, T> {
     /// Open existing Store file
     ///
     /// Will return an error if the file is not a Store file
-    pub fn new(filename: String) -> Result<Store<T>, Box<dyn std::error::Error>> {
+    pub fn new(filename: String,hasher: T) -> Result<Store<U,T>, Box<dyn std::error::Error>> {
         let v = File::open(filename)?;
-        let mut st = Store {
+        let mut st = Store::<U, T> {
             file: v,
             data_start_address: 0,
             block_addresses: Vec::new(),
+            hasher,
+            phantom: PhantomData,
         };
         let fd = st.read_file_descriptor()?;
-        if !Store::validate_file_descriptor(fd) {
+        if !Store::<U,T>::validate_file_descriptor(fd) {
             return Err(Box::new(Error::new(
                 ErrorKind::InvalidData,
                 ERROR_FSTORE_INVALID,
@@ -101,13 +106,15 @@ impl<T> Store<T> {
     ///Create new Store file
     ///
     ///Will overwrite an existing store.
-    pub fn create(filename: String) -> Result<Store<T>, Error> {
+    pub fn create(filename: String, hasher: T) -> Result<Store<U, T>, Error> {
         let mut f = OpenOptions::new().write(true).read(true).create(true).open(filename)?;
-        Store::write_file_descriptor(&mut f)?;
-        Ok(Store {
+        Store::<U, T>::write_file_descriptor(&mut f)?;
+        Ok(Store::<U, T> {
             file: f,
             data_start_address: 0,
             block_addresses: Vec::new(),
+            hasher,
+            phantom: PhantomData,
         })
     }
 
@@ -184,7 +191,7 @@ impl<T> Store<T> {
     }
 }
 
-impl<T> Write for Store<T> {
+impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> Write for Store<U, T> {
     /// Writes data in buf to file, encapsulated in a DataHeader
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
         if let Ok(mut bd) = DataHeader::new(buf, None) {
@@ -203,7 +210,7 @@ impl<T> Write for Store<T> {
     }
 }
 
-impl<T> StoreIO<'_, T> for Store<T> {
+impl<U: Eq + PartialEq + Copy, T: BlockHasher<U>> StoreIO<'_,U, T> for Store<U, T> {
     fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(address) = self.block_addresses.get(index) {
             self.file.seek(SeekFrom::Start(
@@ -236,7 +243,7 @@ impl<T> StoreIO<'_, T> for Store<T> {
     /// Reads data into buf according to surrounding DataHeader
     fn read_data_header(
         &mut self,
-        data_header: &mut DataHeader<T>,
+        data_header: &mut DataHeader<U, T>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut db_buf = vec![0u8; DataHeader::size()];
         self.file.read(&mut db_buf)?;
