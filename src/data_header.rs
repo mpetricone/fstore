@@ -42,7 +42,7 @@ pub trait BlockFlags {
 ///
 /// It should probably be renamed DataHeader
 #[derive(PartialEq, Debug)]
-pub struct DataHeader<'a, U: Eq + PartialEq + Copy, &'a mut T: BlockHasher<U>> {
+pub struct DataHeader<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> where &'a mut T: BlockHasher<U> {
     /// size of data in this block
     size_data: u64,
     /// state of block.
@@ -56,13 +56,13 @@ pub struct DataHeader<'a, U: Eq + PartialEq + Copy, &'a mut T: BlockHasher<U>> {
     phantom: PhantomData<U>,
 }
 
-impl<'a, U:Eq + PartialEq + Copy ,&'a mut T: BlockHasher<U>> DataHeader<'a, U, T> {
+impl<'a, U: Eq + PartialEq + Copy ,T: BlockHasher<U> > DataHeader<'a, U, T> where &'a mut T: BlockHasher<U>, {
     /// create Data block, get size (& eventually checksum from data)
     pub fn new(
         data: &[u8],
-        hasher: &'a mut T
-    ) -> Result<DataHeader<'a, U, &'a mut T>, Box<dyn Error>> {
-        Ok(DataHeader {
+        hasher: T
+    ) -> Result<DataHeader<'a, U,T>, Box<dyn Error>> {
+        Ok(DataHeader::<'a, U, T> {
             size_data: u64::try_from(data.len())?,
             state_flag: STATE_FLAG_ALLOC,
             address_next: DEFAULT_ADDR_NEXT,
@@ -77,7 +77,7 @@ impl<'a, U:Eq + PartialEq + Copy ,&'a mut T: BlockHasher<U>> DataHeader<'a, U, T
     }
 }
 
-impl<'a, U: Eq + PartialEq + Copy,T: BlockHasher<U>> BlockFlags for DataHeader<'a, U, T> {
+impl<'a, U: Eq + PartialEq + Copy,T: BlockHasher<U>> BlockFlags for DataHeader<'a, U, T> where &'a mut T: BlockHasher<U> {
     #[inline]
     fn delete_flag() -> u32 {
         STATE_FLAG_DELETE
@@ -92,7 +92,7 @@ impl<'a, U: Eq + PartialEq + Copy,T: BlockHasher<U>> BlockFlags for DataHeader<'
     }
 }
 
-impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader<'a, U, T> {
+impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> BlockSerializer for DataHeader<'a, U, T> where &'a mut T: BlockHasher<U> {
     /// Return vector serialized DataHeader
     fn serialize(&mut self, data: &[u8]) -> &Vec<u8> {
         self.header.clear();

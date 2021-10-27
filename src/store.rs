@@ -71,7 +71,7 @@ pub trait StoreIO<'a,U: Eq + PartialEq + Copy, T: BlockHasher<U>> {
 
     fn read_data_header(
         &mut self,
-        data_header: &mut DataHeader<U, T>,
+        data_header: &mut DataHeader<'a, U, T>,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn read(&mut self, data: &mut Vec<u8>) -> Result<usize, Error>;
     fn read_at_index(&mut self, index: usize, data: &mut Vec<u8>) -> Result<usize,Box<dyn std::error::Error>>;
