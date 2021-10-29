@@ -61,13 +61,13 @@ impl<'a, U: Eq + PartialEq + Copy ,T: BlockHasher<U> > DataHeader<'a, U, T> wher
     pub fn new(
         data: &[u8],
         hasher: T
-    ) -> Result<DataHeader<'a, U,T>, Box<dyn Error>> {
+    ) -> Result<DataHeader<'a, U, T>, Box<dyn Error>> {
         Ok(DataHeader::<'a, U, T> {
             size_data: u64::try_from(data.len())?,
             state_flag: STATE_FLAG_ALLOC,
             address_next: DEFAULT_ADDR_NEXT,
             header: vec![0],
-            hasher,
+            hasher: &mut hasher,
             phantom: PhantomData,
         })
     }
