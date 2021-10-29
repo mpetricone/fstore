@@ -83,13 +83,13 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<'a, U, T> where &'a 
     /// Open existing Store file
     ///
     /// Will return an error if the file is not a Store file
-    pub fn new(filename: String, hasher: &'a mut T) -> Result<Store<'a, U,&'a mut T>, Box<dyn std::error::Error>> {
+    pub fn new(filename: String, hasher: &'a mut T) -> Result<Store<'a, U,T>, Box<dyn std::error::Error>> {
         let v = File::open(filename)?;
-        let mut st = Store::<U, &'a mut T> {
+        let mut st = Store::<'a, U, T> {
             file: v,
             data_start_address: 0,
             block_addresses: Vec::new(),
-            hasher,
+            hasher: &mut hasher,
             phantom: PhantomData,
         };
         let fd = st.read_file_descriptor()?;
@@ -191,10 +191,10 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<'a, U, T> where &'a 
     }
 }
 
-impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Write for Store<'a, U, T> {
+impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Write for Store<'a, U, T> where &'a mut T: BlockHasher<U> {
     /// Writes data in buf to file, encapsulated in a DataHeader
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        if let Ok(mut bd) = DataHeader::<U,T>::new(buf, &self.hasher) {
+        if let Ok(mut bd) = DataHeader::<U, T>::new(buf, self.hasher) {
             self.file.write(bd.serialize(buf))?;
             let retval = self.file.write(&buf);
             self.block_addresses.push(self.file.seek(SeekFrom::Current(0))?);

@@ -60,7 +60,7 @@ impl<'a, U: Eq + PartialEq + Copy ,T: BlockHasher<U> > DataHeader<'a, U, T> wher
     /// create Data block, get size (& eventually checksum from data)
     pub fn new(
         data: &[u8],
-        hasher: T
+        hasher: &'a mut T
     ) -> Result<DataHeader<'a, U, T>, Box<dyn Error>> {
         Ok(DataHeader::<'a, U, T> {
             size_data: u64::try_from(data.len())?,
