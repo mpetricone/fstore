@@ -4,8 +4,10 @@ use blake3;
 /// Generate a hash from arbitrary amount of input data
 ///
 /// Used by DataBlock to verify data integrity
-pub trait BlockHasher<T: Eq + PartialEq + Copy> {
+pub trait BlockHasher {
     
+    /// Create an instance
+    fn create() -> Self;
     /// Generate hash from input
     fn hash(&mut self, input: &[u8]) -> &[u8];
     /// Size of hash
@@ -19,8 +21,11 @@ pub struct B3BlockHasher {
     pub hash_value: [u8;  32],
 }
 
-impl BlockHasher<&[u8]> for B3BlockHasher {
+impl BlockHasher for B3BlockHasher {
 
+    fn create() -> Self {
+        B3BlockHasher { hash_value: [0; 32] }
+    }
     fn hash(&mut self, input: &[u8]) -> &[u8] {
         self.hash_value = *blake3::hash(input).as_bytes();
         &self.hash_value
@@ -35,7 +40,8 @@ impl BlockHasher<&[u8]> for B3BlockHasher {
 pub struct NullBlockHasher {
 }
 
-impl BlockHasher<u8> for NullBlockHasher {
+impl BlockHasher for NullBlockHasher {
+    fn create() -> Self { NullBlockHasher {} }
     fn hash(&mut self, _input: &[u8]) -> &[u8] { &[0] }
     fn size() -> usize { 0 }
 }

@@ -49,19 +49,19 @@ impl std::error::Error for StoreError {}
 ///
 /// There is a 32bit checksum availible for each block.
 ///
-pub struct Store<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> {
+pub struct Store<T: BlockHasher> {
     /// File data resides in
     file: File,
     /// the last stream position
     data_start_address: u64,
     /// Vector of written block addresses
     block_addresses: Vec<u64>,
-    hasher: &'a mut T,
-    phantom: PhantomData<U>,
+    phantom: PhantomData<T>,
+    
 }
 
 /// Utilities for a Store
-pub trait StoreIO<'a, U: Eq + PartialEq + Copy, T: 'a + BlockHasher<U>> where &'a mut T: BlockHasher<U> {
+pub trait StoreIO<T: BlockHasher> {
     /// Delete block at index
     fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>>;
     /// Should return the number of blocks availible for access
@@ -71,7 +71,7 @@ pub trait StoreIO<'a, U: Eq + PartialEq + Copy, T: 'a + BlockHasher<U>> where &'
 
     fn read_data_header(
         &mut self,
-        data_header: &mut DataHeader<'a, U, T>,
+        data_header: &mut DataHeader<T>,
     ) -> Result<(), Box<dyn std::error::Error>>;
     fn read(&mut self, data: &mut Vec<u8>) -> Result<usize, Error>;
     fn read_at_index(&mut self, index: usize, data: &mut Vec<u8>) -> Result<usize,Box<dyn std::error::Error>>;
@@ -79,21 +79,20 @@ pub trait StoreIO<'a, U: Eq + PartialEq + Copy, T: 'a + BlockHasher<U>> where &'
     fn seek(&mut self, index: usize) -> Result<u64, Box<dyn std::error::Error>>;
 }
 
-impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<'a, U, T> where &'a mut T: BlockHasher<U> {
+impl<T: BlockHasher> Store<T> {
     /// Open existing Store file
     ///
     /// Will return an error if the file is not a Store file
-    pub fn new(filename: String, hasher: &'a mut T) -> Result<Store<'a, U,T>, Box<dyn std::error::Error>> {
+    pub fn new(filename: String) -> Result<Store<T>, Box<dyn std::error::Error>> {
         let v = File::open(filename)?;
-        let mut st = Store::<'a, U, T> {
+        let mut st = Store::<T> {
             file: v,
             data_start_address: 0,
             block_addresses: Vec::new(),
-            hasher: &mut hasher,
             phantom: PhantomData,
         };
         let fd = st.read_file_descriptor()?;
-        if !Store::<U,T>::validate_file_descriptor(fd) {
+        if !Store::<T>::validate_file_descriptor(fd) {
             return Err(Box::new(Error::new(
                 ErrorKind::InvalidData,
                 ERROR_FSTORE_INVALID,
@@ -106,14 +105,13 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<'a, U, T> where &'a 
     ///Create new Store file
     ///
     ///Will overwrite an existing store.
-    pub fn create(filename: String, hasher: &'a mut T) -> Result<Store<'a, U, T>, Error> {
+    pub fn create(filename: String) -> Result<Store<T>, Error> {
         let mut f = OpenOptions::new().write(true).read(true).create(true).open(filename)?;
-        Store::<'a, U, T>::write_file_descriptor(&mut f)?;
-        Ok(Store::<'a, U, T> {
+        Store::<T>::write_file_descriptor(&mut f)?;
+        Ok(Store::<T> {
             file: f,
             data_start_address: 0,
             block_addresses: Vec::new(),
-            hasher,
             phantom: PhantomData,
         })
     }
@@ -169,7 +167,7 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<'a, U, T> where &'a 
             startpos
         };
         // size of read ahead data
-        let buffsize = DataHeader::<U, T>::read_ahead_size();
+        let buffsize = DataHeader::<T>::read_ahead_size();
         // get metadata for file once
         let md = self.file.metadata()?;
         // Insert the first block address
@@ -181,7 +179,7 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<'a, U, T> where &'a 
             // read the data, then pass it to dataBlock::read_ahead
             self.file.read(&mut buffer)?;
             // TODO: I think this logic is wrong, we want a more generic way to do this.
-            let tbs = DataHeader::<U, T>::read_ahead(&buffer)?;
+            let tbs = DataHeader::<T>::read_ahead(&buffer)?;
             // update curpos with next DataHeader addess, then push that onto the list
             curpos = self.file.seek(SeekFrom::Current(tbs))?;
             self.block_addresses.push(curpos);
@@ -191,10 +189,10 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Store<'a, U, T> where &'a 
     }
 }
 
-impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Write for Store<'a, U, T> where &'a mut T: BlockHasher<U> {
+impl<T: BlockHasher> Write for Store<T>  {
     /// Writes data in buf to file, encapsulated in a DataHeader
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        if let Ok(mut bd) = DataHeader::<U, T>::new(buf, self.hasher) {
+        if let Ok(mut bd) = DataHeader::<T>::new(buf) {
             self.file.write(bd.serialize(buf))?;
             let retval = self.file.write(&buf);
             self.block_addresses.push(self.file.seek(SeekFrom::Current(0))?);
@@ -210,13 +208,13 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> Write for Store<'a, U, T> 
     }
 }
 
-impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> StoreIO<'a,U, T> for Store<'a, U, T> where &'a mut T: BlockHasher<U> {
+impl<T: BlockHasher> StoreIO<T> for Store<T> {
     fn delete_block(&mut self, index: usize) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(address) = self.block_addresses.get(index) {
             self.file.seek(SeekFrom::Start(
-                *address + u64::try_from(DataHeader::<U,T>::delete_offset())?,
+                *address + u64::try_from(DataHeader::<T>::delete_offset())?,
             ))?;
-            self.file.write(&DataHeader::<U, T>::delete_flag().to_le_bytes())?;
+            self.file.write(&DataHeader::<T>::delete_flag().to_le_bytes())?;
             self.file.seek(SeekFrom::Start(0))?;
         } else {
             return Err(Box::new(StoreError::new(ERROR_OUTOFBOUNDS.to_string())));
@@ -243,9 +241,9 @@ impl<'a, U: Eq + PartialEq + Copy, T: BlockHasher<U>> StoreIO<'a,U, T> for Store
     /// Reads data into buf according to surrounding DataHeader
     fn read_data_header(
         &mut self,
-        data_header: &mut DataHeader<'a, U, T>,
+        data_header: &mut DataHeader<T>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut db_buf = vec![0u8; DataHeader::<U, T>::size()];
+        let mut db_buf = vec![0u8; DataHeader::<T>::size()];
         self.file.read(&mut db_buf)?;
         data_header.deserialize(&db_buf)?;
         Ok(())
