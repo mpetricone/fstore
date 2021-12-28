@@ -57,11 +57,9 @@ pub struct DataHeader<T: BlockHasher> {
 
 impl<T: BlockHasher > DataHeader<T> {
     /// create Data block, get size (& eventually checksum from data)
-    pub fn new(
-        data: &[u8]
-    ) -> Result<DataHeader<T>, Box<dyn Error>> {
+    pub fn new( ) -> Result<DataHeader<T>, Box<dyn Error>> {
         Ok(DataHeader::<T> {
-            size_data: u64::try_from(data.len())?,
+            size_data: 0,
             state_flag: STATE_FLAG_ALLOC,
             address_next: DEFAULT_ADDR_NEXT,
             header: vec![0],
@@ -91,7 +89,7 @@ impl<T: BlockHasher> BlockFlags for DataHeader<T> {
 
 impl<T: BlockHasher> BlockSerializer for DataHeader<T> {
     /// Return vector serialized DataHeader
-    fn serialize(&mut self, data: &[u8]) -> &Vec<u8> {
+    fn serialize(&mut self, data: &[u8] ) -> &Vec<u8> {
         self.header.clear();
         self.header
             .append(&mut self.size_data.to_le_bytes().to_vec());
@@ -150,22 +148,23 @@ mod tests {
 
     #[test]
     fn can_create_data_block() {
-        let _db = DataHeader::<&[u8],B3BlockHasher>::new(&vec![0u8; 8], B3BlockHasher::default() ).unwrap();
+        let _db = DataHeader::<B3BlockHasher>::new();
     }
 
     #[test]
     fn can_serialize_data_block() {
+        let data = [0, 0, 1, 0];
         println!(
             "{:?}",
-            DataHeader::<u8,NullBlockHasher>::new(&vec!(0u8; 16), NullBlockHasher::default()).unwrap().serialize(&[0u8])
+            DataHeader::<NullBlockHasher>::new().unwrap().serialize(&data)
         );
     }
 
     #[test]
     fn can_deserialize_data_block() {
         let data = [0u8];
-        let mut serialized = DataHeader::<B3BlockHasher>::new(&vec![50, 24, 24, 100], B3BlockHasher::default()).unwrap();
-        let mut db2 = DataHeader::<B3BlockHasher>::new(&Vec::<u8>::new(), B3BlockHasher::default()).unwrap();
+        let mut serialized = DataHeader::<B3BlockHasher>::new().unwrap();
+        let mut db2 = DataHeader::<B3BlockHasher>::new().unwrap();
         db2.deserialize(serialized.serialize(&data)).unwrap();
         // This is to make sure the db2.header matches serialized.header otherwise we'll fail the
         // assert

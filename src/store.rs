@@ -192,7 +192,7 @@ impl<T: BlockHasher> Store<T> {
 impl<T: BlockHasher> Write for Store<T>  {
     /// Writes data in buf to file, encapsulated in a DataHeader
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-        if let Ok(mut bd) = DataHeader::<T>::new(buf) {
+        if let Ok(mut bd) = DataHeader::<T>::new() {
             self.file.write(bd.serialize(buf))?;
             let retval = self.file.write(&buf);
             self.block_addresses.push(self.file.seek(SeekFrom::Current(0))?);
@@ -276,7 +276,7 @@ mod tests {
     }
     #[test]
     fn can_write_to_store() {
-        let mut s = Store::<&[u8], B3BlockHasher>::create("testout/store.st".to_string(), B3BlockHasher::default()).unwrap();
+        let mut s = Store::<B3BlockHasher>::create("testout/store.st".to_string()).unwrap();
         let mut buf = vec![0, 1, 3, 4, 5, 11, 33, 0];
         s.write(&mut buf).unwrap();
         s.write(&mut buf).unwrap();
@@ -287,15 +287,15 @@ mod tests {
         let mut testval = Vec::new();
         fill_test_vector(&mut testval);
         {
-            let mut s = Store::<&[u8], B3BlockHasher>::create("testout/store.test.st".to_string(), B3BlockHasher::default()).unwrap();
+            let mut s = Store::<B3BlockHasher>::create("testout/store.test.st".to_string()).unwrap();
             for _i in 1..10 {
                 s.write(&testval).unwrap();
                 s.write(&testval).unwrap();
             }
         }
 
-        let mut db = DataHeader::<&[u8], B3BlockHasher>::new(&[0u8],B3BlockHasher::default()).unwrap();
-        let mut s = Store::<&[u8], B3BlockHasher>::new("testout/store.test.st".to_string(), B3BlockHasher::default()).unwrap();
+        let mut db = DataHeader::<B3BlockHasher>::new().unwrap();
+        let mut s = Store::<B3BlockHasher>::new("testout/store.test.st".to_string()).unwrap();
         s.read_data_header(&mut db).unwrap();
         let mut data = vec![0u8; db.data_size().unwrap()];
         s.read(&mut data).unwrap();
@@ -309,14 +309,14 @@ mod tests {
             vec!(1,2,3,4,5,6,7,8,9,0),
             vec!(11,12,13,14,15,16,17,18,19,20),
         ];
-        let mut s = Store::<&[u8], B3BlockHasher>::create("testout/delete.tst".to_string(), B3BlockHasher::default()).unwrap();
+        let mut s = Store::<B3BlockHasher>::create("testout/delete.tst".to_string()).unwrap();
         for i in v {
             s.write(&i).unwrap();
         }
         s.delete_block(2).unwrap();
-        let mut db = DataHeader::<&[u8], B3BlockHasher>::new(&[0u8], B3BlockHasher::default()).unwrap();
+        let mut db = DataHeader::<B3BlockHasher>::new().unwrap();
         s.seek(2).unwrap();
         s.read_data_header(&mut db).unwrap();
-        assert_eq!(DataHeader::<&[u8], B3BlockHasher>::delete_flag(),db.state_flag );
+        assert_eq!(DataHeader::<B3BlockHasher>::delete_flag(),db.state_flag );
     }
 }

@@ -15,7 +15,7 @@ pub trait BlockHasher {
 }
 
 /// Blake3 Hasher
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq)]
 pub struct B3BlockHasher {
     /// Stores the value of hash as bytes, not aligned.
     pub hash_value: [u8;  32],
