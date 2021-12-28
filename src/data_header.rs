@@ -18,6 +18,8 @@ pub trait BlockSerializer {
     fn serialize(&mut self, data: &[u8]) -> &Vec<u8>;
 
     fn deserialize(&mut self, data: &Vec<u8>) -> Result<(), Box<dyn Error>>;
+    
+    fn verify(&self, data: &[u8]) -> bool;
 
     /// size in bytes of the serialized data
     fn size() -> usize;
@@ -50,6 +52,7 @@ pub struct DataHeader<T: BlockHasher> {
     pub state_flag: u32,
     /// address of next DataHeader in file containing appended data
     address_next: u64,
+    checksum: Vec<u8>,
     /// Vector of DataHeader header
     header: Vec<u8>,
     phantom: PhantomData<T>,
@@ -63,6 +66,7 @@ impl<T: BlockHasher > DataHeader<T> {
             state_flag: STATE_FLAG_ALLOC,
             address_next: DEFAULT_ADDR_NEXT,
             header: vec![0],
+            checksum: vec![0],
             phantom: PhantomData,
         })
     }
@@ -110,13 +114,12 @@ impl<T: BlockHasher> BlockSerializer for DataHeader<T> {
         self.size_data = u64::from_le_bytes(data[0..8].try_into()?);
         self.state_flag = u32::from_le_bytes(data[8..12].try_into()?);
         self.address_next = u64::from_le_bytes(data[12..20].try_into()?);
-        if T::create().hash(data) != &data[20..] {
-            return Err(
-                Box::new(
-                    std::io::Error::new(std::io::ErrorKind::InvalidData, 
-                        "Block Hashes do not match.")))
-        }
+        self.checksum = data[20..].to_vec();
         Ok(())
+    }
+
+    fn verify(&self, data: &[u8]) -> bool {
+        T::create().hash(data)==self.checksum
     }
 
     #[inline]
@@ -154,22 +157,19 @@ mod tests {
     #[test]
     fn can_serialize_data_block() {
         let data = [0, 0, 1, 0];
-        println!(
-            "{:?}",
-            DataHeader::<NullBlockHasher>::new().unwrap().serialize(&data)
-        );
+        let mut dh = DataHeader::<B3BlockHasher>::new().unwrap();
+        dh.serialize(&data);
     }
 
     #[test]
     fn can_deserialize_data_block() {
-        let data = [0u8];
+        let data = [0, 1, 4, 8, 16, 32, 64, 128];
         let mut serialized = DataHeader::<B3BlockHasher>::new().unwrap();
         let mut db2 = DataHeader::<B3BlockHasher>::new().unwrap();
         db2.deserialize(serialized.serialize(&data)).unwrap();
         // This is to make sure the db2.header matches serialized.header otherwise we'll fail the
         // assert
-        db2.serialize(&data);
-        assert_eq!(db2, serialized);
+        assert_eq!(serialized, db2);
     }
 
     #[test]
