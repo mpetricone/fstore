@@ -93,7 +93,7 @@ impl<T: BlockHasher> BlockFlags for DataHeader<T> {
 
 impl<T: BlockHasher> BlockSerializer for DataHeader<T> {
     /// Return vector serialized DataHeader
-    fn serialize(&mut self, data: &[u8] ) -> &Vec<u8> {
+    fn serialize(&mut self, data: &[u8]) -> &Vec<u8> {
         self.header.clear();
         self.header
             .append(&mut self.size_data.to_le_bytes().to_vec());
@@ -167,9 +167,8 @@ mod tests {
         let mut serialized = DataHeader::<B3BlockHasher>::new().unwrap();
         let mut db2 = DataHeader::<B3BlockHasher>::new().unwrap();
         db2.deserialize(serialized.serialize(&data)).unwrap();
-        // This is to make sure the db2.header matches serialized.header otherwise we'll fail the
-        // assert
-        assert_eq!(serialized, db2);
+
+        assert!(db2.verify(&data));
     }
 
     #[test]
