@@ -15,7 +15,7 @@ const DEFAULT_ADDR_NEXT: u64 = 0;
 pub trait BlockSerializer {
     /// Create a vector of data ready to be written
     ///
-    fn serialize(&mut self, data: &[u8]) -> &Vec<u8>;
+    fn serialize(&mut self, data: &[u8]) -> Result<&Vec<u8>, Box<dyn Error>>;
 
     fn deserialize(&mut self, data: &Vec<u8>) -> Result<(), Box<dyn Error>>;
     
@@ -93,8 +93,9 @@ impl<T: BlockHasher> BlockFlags for DataHeader<T> {
 
 impl<T: BlockHasher> BlockSerializer for DataHeader<T> {
     /// Return vector serialized DataHeader
-    fn serialize(&mut self, data: &[u8]) -> &Vec<u8> {
+    fn serialize(&mut self, data: &[u8]) -> Result<&Vec<u8>, Box<dyn Error>> {
         self.header.clear();
+        self.size_data = u64::try_from(data.len())?;
         self.header
             .append(&mut self.size_data.to_le_bytes().to_vec());
         self.header
@@ -104,7 +105,7 @@ impl<T: BlockHasher> BlockSerializer for DataHeader<T> {
         let mut hasher = T::create();
         self.header
             .append(&mut hasher.hash(data).to_vec());
-        &self.header
+        Ok(&self.header)
     }
 
     /// Fill struct from binary data
@@ -166,7 +167,7 @@ mod tests {
         let data = [0, 1, 4, 8, 16, 32, 64, 128];
         let mut serialized = DataHeader::<B3BlockHasher>::new().unwrap();
         let mut db2 = DataHeader::<B3BlockHasher>::new().unwrap();
-        db2.deserialize(serialized.serialize(&data)).unwrap();
+        db2.deserialize(serialized.serialize(&data).unwrap()).unwrap();
 
         assert!(db2.verify(&data));
     }

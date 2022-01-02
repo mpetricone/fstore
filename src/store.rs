@@ -193,7 +193,11 @@ impl<T: BlockHasher> Write for Store<T>  {
     /// Writes data in buf to file, encapsulated in a DataHeader
     fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
         if let Ok(mut bd) = DataHeader::<T>::new() {
-            self.file.write(bd.serialize(buf))?;
+            if let Ok(sd) = bd.serialize(buf) {
+            self.file.write(sd)?;
+            } else {
+                return Err(Error::new(ErrorKind::InvalidInput, ERROR_FSTORE_INVSIZE));
+            }
             let retval = self.file.write(&buf);
             self.block_addresses.push(self.file.seek(SeekFrom::Current(0))?);
             retval
@@ -297,6 +301,7 @@ mod tests {
         let mut db = DataHeader::<B3BlockHasher>::new().unwrap();
         let mut s = Store::<B3BlockHasher>::new("testout/store.test.st".to_string()).unwrap();
         s.read_data_header(&mut db).unwrap();
+        println!("data header size: {:?}", db.data_size().unwrap());
         let mut data = vec![0u8; db.data_size().unwrap()];
         s.read(&mut data).unwrap();
         assert_eq!(testval, data);
