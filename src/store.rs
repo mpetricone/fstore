@@ -301,7 +301,7 @@ mod tests {
         let mut db = DataHeader::<B3BlockHasher>::new().unwrap();
         let mut s = Store::<B3BlockHasher>::new("testout/store.test.st".to_string()).unwrap();
         s.read_data_header(&mut db).unwrap();
-        println!("data header size: {:?}", db.data_size().unwrap());
+        println!("data header size: {:?}", db);
         let mut data = vec![0u8; db.data_size().unwrap()];
         s.read(&mut data).unwrap();
         assert_eq!(testval, data);

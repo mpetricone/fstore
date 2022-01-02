@@ -148,7 +148,7 @@ impl<T: BlockHasher> BlockSerializer for DataHeader<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::crypto::{ NullBlockHasher, B3BlockHasher};
+    use crate::crypto::{B3BlockHasher};
 
     #[test]
     fn can_create_data_block() {
@@ -159,7 +159,7 @@ mod tests {
     fn can_serialize_data_block() {
         let data = [0, 0, 1, 0];
         let mut dh = DataHeader::<B3BlockHasher>::new().unwrap();
-        dh.serialize(&data);
+        dh.serialize(&data).unwrap();
     }
 
     #[test]

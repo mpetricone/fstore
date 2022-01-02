@@ -32,7 +32,7 @@ impl BlockHasher for B3BlockHasher {
     }
 
     fn size() -> usize {
-        256
+        32
     }
 }
 
