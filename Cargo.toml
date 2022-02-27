@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 description = "Sequential binary data storage"
 license = "MIT"
+repository = "https://github.com/mpetricone/fstore"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
